@@ -1,162 +1,78 @@
-# FinQA - Financial Question Answering Environment
+# FinQA
 
-OpenReward environment for the FinQA dataset (EMNLP 2021).
+[![OpenReward Environment](https://img.shields.io/badge/%E2%AD%90%20OpenReward-Environment-f7e6cc)](https://openreward.ai/GeneralReasoning/FinQA)
 
-## Overview
+## Description
 
-FinQA is a financial reasoning environment that requires agents to read financial documents (tables + text), perform numerical calculations, and submit accurate answers.
+FinQA is an environment for evaluating numerical reasoning over financial data. Agents must analyze financial documents containing tables and contextual text, perform multi-step calculations, and produce accurate numerical answers. Tasks are derived from real earnings reports and SEC filings requiring domain-specific financial reasoning.
 
-**Paper**: [Chen et al., "FinQA: A Dataset of Numerical Reasoning over Financial Data", EMNLP 2021](https://github.com/czyssrs/FinQA)
+## Capabilities
 
-## Task Description
+- Numerical reasoning over financial tables
+- Multi-step calculation and computation
+- Understanding financial document context
+- Extracting and combining values from tables and text
 
-Agents must:
-1. Read pre-table text, financial tables, and post-table text
-2. Understand the question about the financial data
-3. Use CLI tools (bash, read, write, etc.) to perform calculations
-4. Submit a final numerical answer
+## Compute Requirements
 
-## Environment Details
-
-- **Type**: Single-turn evaluation with CLIEnvironment
-- **Splits**:
-  - `train`: 6,250+ tasks
-  - `dev`: 883 tasks
-  - `test`: 1,147 tasks
-- **Evaluation**: Execution accuracy (numerical answer matching)
-- **Tools**:
-  - 12 CLI tools (bash, glob, grep, ls, read, write, edit, multi_edit, todo_write)
-  - 1 custom tool: `submit_answer`
-
-## Example Task
-
-**Prompt:**
-```markdown
-## Financial Data Table
-| Year | Revenue | Expenses |
-|------|---------|----------|
-| 2020 | 5829    | 4500     |
-| 2021 | 5735    | 4200     |
-
-## Question
-What is the percentage decrease in revenue from 2020 to 2021?
-
-## Instructions
-You have access to CLI tools (bash, read, write, grep, etc.) to perform calculations.
-Use these tools to analyze the data and compute your answer.
-When ready, submit your final numerical answer using the submit_answer tool.
-```
-
-**Expected Agent Behavior:**
-1. Write Python script: `(5829 - 5735) / 5829 * 100`
-2. Execute: `bash: python calculate.py`
-3. Submit: `submit_answer: {"answer": "1.61"}`
-4. Result: ✅ Correct! (reward=1.0)
-
-## Usage
-
-### Prerequisites
-
-- Python 3.11+
-- OpenReward SDK
-- OpenAI API key (for testing)
-
-### Local Development
-
-1. **Start the server:**
-   ```bash
-   python server.py
-   ```
-
-   Server will start on `http://0.0.0.0:8080`
-
-2. **Test with an agent:**
-   ```bash
-   export OPENAI_API_KEY="your-key"
-   python test_agent.py
-   ```
-
-### Docker
-
-1. **Build the image:**
-   ```bash
-   docker build -t finqa:latest .
-   ```
-
-2. **Run the container:**
-   ```bash
-   docker run -p 8080:8080 finqa:latest
-   ```
-
-## Architecture
-
-### Files
-
-- `finqa.py` - Main environment class extending CLIEnvironment
-- `cli_environment.py` - Base CLIEnvironment with 12 built-in tools
-- `utils.py` - Sandbox utilities for file upload/download
-- `server.py` - Minimal server wrapper
-- `test_agent.py` - OpenAI Responses API test client
-- `data/` - Dataset files (train.json, dev.json, test.json)
-
-### Key Features
-
-1. **Table Formatting**: Financial tables converted to markdown for readability
-2. **Numerical Validation**: Flexible answer comparison handling percentages, decimals, separators
-3. **CLI Tools**: Agents can write scripts, execute calculations, iterate on solutions
-4. **Tolerance**: 1e-4 (0.01%) relative tolerance for floating-point accuracy
-
-## Answer Validation
-
-The environment validates numerical answers with flexible comparison:
-
-- ✅ Handles percentages: `"15.3%"` == `"15.3"`
-- ✅ Handles decimals: `"1000"` == `"1000.0"`
-- ✅ Handles separators: `"1,000"` == `"1000"`
-- ✅ Uses relative tolerance (0.01%) for large numbers
-- ✅ Fallback to string comparison for non-numeric values
-
-## Dataset
-
-- **Source**: [FinQA GitHub Repository](https://github.com/czyssrs/FinQA)
-- **Size**: ~8.5K tasks across train/dev/test splits
-- **Format**: JSON files with financial documents and questions
-
-Each task contains:
-```json
-{
-  "id": "unique_identifier",
-  "pre_text": ["text before table"],
-  "table": [["Header1", "Header2"], ["Value1", "Value2"]],
-  "post_text": ["text after table"],
-  "qa": {
-    "question": "What is the percentage change?",
-    "exe_ans": "25.5"
-  }
-}
-```
+Agents are given a sandboxed environment with 0.5 CPU and 0.5 GB RAM, with access to CLI tools for computation.
 
 ## License
 
-MIT License (consistent with original FinQA dataset)
+[MIT](https://opensource.org/licenses/MIT).
+
+## Tasks
+
+There are three splits in this environment:
+
+- **train**: 6,251 tasks
+- **dev**: 883 tasks
+- **test**: 1,147 tasks
+
+Each task presents a financial document with pre-table context, a data table, post-table context, and a numerical question requiring calculation.
+
+## Reward Structure
+
+This is a multi-turn environment. Agents can use CLI tools (bash, read, write, grep, etc.) to analyze data and perform calculations. The agent submits a final numerical answer via the `submit_answer` tool. Validation uses numerical comparison with tolerance for percentages and decimal variations. Reward is binary: 1.0 if correct, 0.0 if incorrect.
+
+## Data
+
+Data consists of JSON files (`train.json`, `dev.json`, `test.json`) containing financial documents with tables, context text, and QA pairs. Data is stored on the OpenReward platform.
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `bash` | Execute shell commands for computation |
+| `read` | Read file contents |
+| `write` | Write content to files |
+| `grep` | Search for patterns in files |
+| `submit_answer` | Submit your final numerical answer. Ends the episode. |
+
+## Time Horizon
+
+Multi-turn. Agents can perform multiple computation steps before submitting a final answer.
+
+## Environment Difficulty
+
+FinQA evaluates financial numerical reasoning capabilities requiring table understanding and multi-step calculation.
+
+## Other Environment Requirements
+
+There are no further environment requirements; FinQA works out of the box with the OpenReward endpoint without any external API keys.
+
+## Safety
+
+Agents in FinQA perform financial calculations in a sandboxed environment. The environment does not present direct safety risks.
 
 ## Citation
-
-If you use this environment, please cite the original FinQA paper:
 
 ```bibtex
 @inproceedings{chen2021finqa,
   title={FinQA: A Dataset of Numerical Reasoning over Financial Data},
   author={Chen, Zhiyu and Chen, Wenhu and Smiley, Charese and Shah, Sameena and Borova, Iana and Langdon, Dylan and Moussa, Reema and Beane, Matt and Huang, Ting-Hao and Routledge, Bryan and Wang, William Yang},
   booktitle={Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing},
+  pages={7672--7685},
   year={2021}
 }
 ```
-
-## Contributing
-
-This environment is part of the EnvCommons collection. For issues or improvements, please open a GitHub issue.
-
-## Contact
-
-For questions about this environment, please open an issue on the [EnvCommons/finqa](https://github.com/EnvCommons/finqa) repository.
