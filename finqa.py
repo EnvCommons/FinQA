@@ -41,6 +41,11 @@ FINQA_DATA = load_finqa_data()
 # Pydantic Schemas
 # ====================
 
+# Reward for a submission made after the task has already been graded. Negative
+# so repeat submissions are actively discouraged, not merely left unscored.
+REPEAT_SUBMISSION_PENALTY = -0.1
+
+
 class FinQATaskSpec(BaseModel):
     id: str
     split: str
@@ -241,6 +246,10 @@ class FinQA(CLIEnvironment):
         self.task_id = spec.id
         self.split = spec.split
 
+        # Graded submissions this session. Only the first is scored, so the task
+        # cannot be re-graded for a second payout.
+        self.submitted = 0
+
         # Find task in data
         self.task_data = next(
             (task for task in FINQA_DATA[self.split] if task["id"] == self.task_id),
@@ -285,6 +294,16 @@ class FinQA(CLIEnvironment):
         Returns:
             ToolOutput with correctness feedback, reward, and finished=True
         """
+        if self.submitted > 0:
+            return ToolOutput(
+                blocks=[TextBlock(type="text", text="An answer has already been submitted for this task. "
+                                       "This episode is over: it is not re-graded, and repeat "
+                                       "submissions are penalised (reward -0.1).")],
+                metadata={"already_submitted": True, "submission_count": self.submitted},
+                reward=REPEAT_SUBMISSION_PENALTY,
+                finished=True,
+            )
+
         # Extract ground truth
         ground_truth = str(self.task_data["qa"]["exe_ans"])
         submitted = params.answer.strip()
@@ -298,6 +317,8 @@ class FinQA(CLIEnvironment):
             message = f"✅ Correct! Your answer '{submitted}' matches the expected answer '{ground_truth}'."
         else:
             message = f"❌ Incorrect. Your answer: '{submitted}'. Expected: '{ground_truth}'."
+
+        self.submitted += 1
 
         return ToolOutput(
             blocks=[TextBlock(type="text", text=message)],
