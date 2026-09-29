@@ -314,9 +314,9 @@ class FinQA(CLIEnvironment):
 
         # Generate feedback message
         if is_correct:
-            message = f"✅ Correct! Your answer '{submitted}' matches the expected answer '{ground_truth}'."
+            message = f"✅ Correct! Your answer '{submitted}' matches the expected answer."
         else:
-            message = f"❌ Incorrect. Your answer: '{submitted}'. Expected: '{ground_truth}'."
+            message = f"❌ Incorrect. Your answer: '{submitted}'."
 
         self.submitted += 1
 
@@ -325,7 +325,6 @@ class FinQA(CLIEnvironment):
             metadata={
                 "task_id": self.task_id,
                 "submitted_answer": submitted,
-                "expected_answer": ground_truth,
                 "correct": is_correct,
             },
             reward=reward,
