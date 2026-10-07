@@ -87,65 +87,65 @@ def format_table_markdown(table: List[List[str]]) -> str:
     return "\n".join(lines)
 
 
-def validate_numerical_answer(submitted: str, expected: str, tolerance: float = 1e-4) -> bool:
+# Largest relative error accepted between an answer and the reference, on top of
+# the answer agreeing with the reference at the answer's own stated precision.
+MAX_RELATIVE_ERROR = 0.01
+
+
+def validate_numerical_answer(submitted: str, expected: str) -> bool:
     """
     Validate numerical answers with flexible comparison.
 
-    Handles:
-    - Percentages (15.3% vs 15.3)
-    - Decimal variations (1000 vs 1000.0)
-    - Thousand separators (1,000 vs 1000)
-    - Scientific notation
-    - Negative numbers
+    The reference is FinQA's executed program result (exe_ans), which gives
+    percentages as fractions (0.11852) or occasionally already scaled (11.852),
+    while answers are written as "11.85%", "11.85" or "0.1185". So the answer
+    value (with any "%" sign dropped) is compared against both the reference
+    and 100x the reference.
+
+    An answer matches a target when:
+    - it equals the target rounded to the answer's number of decimal places
+      ("2.60" and "2.6" match 2.60192; "2.61" does not), and
+    - it is within MAX_RELATIVE_ERROR of the target, so a coarsely rounded
+      answer ("0" for 0.3, "7%" for 6.58%) does not match.
+
+    Thousand separators and "$" are ignored. A non-numeric reference
+    ("yes"/"no") is compared as a case-insensitive string.
 
     Args:
         submitted: Agent's submitted answer
         expected: Ground truth answer
-        tolerance: Relative tolerance for floating point comparison (default: 0.01%)
 
     Returns:
-        True if answers match within tolerance
+        True if the answer matches the reference
     """
 
-    def parse_number(s: str) -> float:
-        """Parse string to number, handling percentages and edge cases."""
-        s = s.strip()
-
-        # Handle percentage
-        is_percentage = s.endswith('%')
-        if is_percentage:
+    def parse_number(s: str) -> tuple[float, int]:
+        """Parse a number; return its value and its number of decimal places."""
+        s = s.strip().replace(',', '').replace('$', '').strip()
+        if s.endswith('%'):
             s = s[:-1].strip()
-
-        # Remove common formatting
-        s = s.replace(',', '')  # Remove thousand separators
-
-        # Parse to float
-        try:
-            num = float(s)
-            # If original had %, keep as-is (don't divide by 100)
-            # This allows comparing "15.3%" with "15.3"
-            return num
-        except ValueError:
-            raise ValueError(f"Cannot parse '{s}' as a number")
+        num = float(s)
+        decimals = len(s.split('.')[1]) if '.' in s and 'e' not in s.lower() else 0
+        return num, decimals
 
     try:
-        submitted_num = parse_number(submitted)
-        expected_num = parse_number(expected)
-
-        # Absolute difference comparison
-        diff = abs(submitted_num - expected_num)
-
-        # For very small numbers, use absolute tolerance
-        # For larger numbers, use relative tolerance
-        if abs(expected_num) < 1e-6:
-            return diff < tolerance
-        else:
-            relative_diff = diff / abs(expected_num)
-            return relative_diff < tolerance
-
-    except (ValueError, ZeroDivisionError):
+        submitted_num, decimals = parse_number(submitted)
+        expected_num, _ = parse_number(expected)
+    except ValueError:
         # Fallback to string comparison for non-numeric answers
         return submitted.strip().lower() == expected.strip().lower()
+
+    for target in (expected_num, expected_num * 100):
+        if target == 0:
+            if submitted_num == 0:
+                return True
+            continue
+        diff = abs(submitted_num - target)
+        # The small relative slack absorbs float representation error.
+        matches_precision = diff <= 0.5 * 10 ** -decimals + 1e-9 * abs(target)
+        if matches_precision and diff / abs(target) <= MAX_RELATIVE_ERROR:
+            return True
+    return False
 
 
 def format_full_prompt(task_data: dict) -> str:

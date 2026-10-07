@@ -33,7 +33,7 @@ Each task presents a financial document with pre-table context, a data table, po
 
 ## Reward Structure
 
-This is a multi-turn environment. Agents can use CLI tools (bash, read, write, grep, etc.) to analyze data and perform calculations. The agent submits a final numerical answer via the `submit_answer` tool. Validation uses numerical comparison with tolerance for percentages and decimal variations. Reward is binary: 1.0 if correct, 0.0 if incorrect.
+This is a multi-turn environment. Agents can use CLI tools (bash, read, write, grep, etc.) to analyze data and perform calculations. The agent submits a final numerical answer via the `submit_answer` tool. Validation is numerical: the answer must agree with the reference (FinQA's executed program result) at the answer's own number of decimal places and be within 1% of it. Percentages may be given as "11.85%", "11.85" or "0.1185". Reward is binary: 1.0 if correct, 0.0 if incorrect.
 
 ## Data
 
