@@ -87,8 +87,9 @@ def format_table_markdown(table: List[List[str]]) -> str:
     return "\n".join(lines)
 
 
-# Largest relative error accepted between an answer and the reference, on top of
-# the answer agreeing with the reference at the answer's own stated precision.
+# Largest relative error accepted between an answer and the reference. The window
+# does not depend on how many digits the answer gives, so rounding more coarsely
+# never widens it; any answer with 3 significant figures falls inside it.
 MAX_RELATIVE_ERROR = 0.01
 
 
@@ -102,11 +103,9 @@ def validate_numerical_answer(submitted: str, expected: str) -> bool:
     value (with any "%" sign dropped) is compared against both the reference
     and 100x the reference.
 
-    An answer matches a target when:
-    - it equals the target rounded to the answer's number of decimal places
-      ("2.60" and "2.6" match 2.60192; "2.61" does not), and
-    - it is within MAX_RELATIVE_ERROR of the target, so a coarsely rounded
-      answer ("0" for 0.3, "7%" for 6.58%) does not match.
+    An answer matches a target when it is within MAX_RELATIVE_ERROR of it
+    ("2.60", "2.6" and "2.61" match 2.60192; "3.5%" for 3.537% and "7%" for
+    6.58% do not). A zero reference needs an exact zero.
 
     Thousand separators and "$" are ignored. A non-numeric reference
     ("yes"/"no") is compared as a case-insensitive string.
@@ -119,18 +118,15 @@ def validate_numerical_answer(submitted: str, expected: str) -> bool:
         True if the answer matches the reference
     """
 
-    def parse_number(s: str) -> tuple[float, int]:
-        """Parse a number; return its value and its number of decimal places."""
+    def parse_number(s: str) -> float:
         s = s.strip().replace(',', '').replace('$', '').strip()
         if s.endswith('%'):
             s = s[:-1].strip()
-        num = float(s)
-        decimals = len(s.split('.')[1]) if '.' in s and 'e' not in s.lower() else 0
-        return num, decimals
+        return float(s)
 
     try:
-        submitted_num, decimals = parse_number(submitted)
-        expected_num, _ = parse_number(expected)
+        submitted_num = parse_number(submitted)
+        expected_num = parse_number(expected)
     except ValueError:
         # Fallback to string comparison for non-numeric answers
         return submitted.strip().lower() == expected.strip().lower()
@@ -140,10 +136,7 @@ def validate_numerical_answer(submitted: str, expected: str) -> bool:
             if submitted_num == 0:
                 return True
             continue
-        diff = abs(submitted_num - target)
-        # The small relative slack absorbs float representation error.
-        matches_precision = diff <= 0.5 * 10 ** -decimals + 1e-9 * abs(target)
-        if matches_precision and diff / abs(target) <= MAX_RELATIVE_ERROR:
+        if abs(submitted_num - target) / abs(target) <= MAX_RELATIVE_ERROR:
             return True
     return False
 
@@ -190,6 +183,7 @@ def format_full_prompt(task_data: dict) -> str:
     sections.append("When ready, submit your final numerical answer using the submit_answer tool.")
     sections.append("")
     sections.append("**Important**: Your answer should be a single numerical value (e.g., '1.61' or '15.3%').")
+    sections.append("Give at least 3 significant figures: an answer is accepted only if it is within 1% of the correct value, so a coarsely rounded answer (e.g. '7%' for 6.58%) is marked incorrect.")
 
     return "\n".join(sections)
 
