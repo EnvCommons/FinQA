@@ -7,7 +7,14 @@ import asyncio
 
 import pytest
 
-from finqa import FINQA_DATA, FinQA, SubmitAnswerInput, format_full_prompt, validate_numerical_answer
+from finqa import (
+    FINQA_DATA,
+    FinQA,
+    SubmitAnswerInput,
+    format_full_prompt,
+    has_consistent_reference,
+    validate_numerical_answer,
+)
 
 
 def _task(task_id: str) -> dict:
@@ -109,3 +116,41 @@ def test_coarse_constant_answers_score_zero(coarse: str):
 def test_prompt_states_required_precision():
     prompt = format_full_prompt(_task("LKQ/2009/page_66.pdf-2"))
     assert "3 significant figures" in prompt and "within 1%" in prompt
+
+
+@pytest.mark.parametrize("answer,exe_ans,ok", [
+    ("35.72%", 0.35715, True),
+    ("35.72%", 0.73684, False),  # program divides the wrong way round
+    ("11.85%", 0.11852, True),
+    ("7%", 0.0658, True),  # coarsely rounded
+    ("7.7%", 7.78443, True),  # truncated
+    ("14%", 0.13174, False),  # neither rounded nor truncated, 6% off
+    ("16.7%", -0.16667, False),  # opposite sign
+    ("2.58", 0.00258, False),  # different units
+    ("0.1", 0.01, False),
+    ("$ 13 million", 13.0, True),
+    ("1,234", 1234.0, True),
+    ("", 22929.0, True),  # no written answer to check against
+    ("yes", "yes", False),
+    ("no", "no", False),
+])
+def test_has_consistent_reference(answer, exe_ans, ok: bool):
+    assert has_consistent_reference({"answer": answer, "exe_ans": exe_ans}) is ok
+
+
+# STT/2006/page_92.pdf-4: exe_ans 0.73684 from a wrong program, written answer 35.72%.
+# SLG/2018/page_45.pdf-1: a yes/no question.
+@pytest.mark.parametrize("task_id", ["STT/2006/page_92.pdf-4", "SLG/2018/page_45.pdf-1"])
+def test_inconsistent_tasks_are_not_served(task_id: str):
+    assert task_id not in {t["id"] for t in FinQA.list_tasks("train")}
+    with pytest.raises(ValueError):
+        FinQA(task_spec={"id": task_id, "split": "train"}, secrets={"api_key": ""})
+
+
+def test_served_tasks_have_consistent_numeric_references():
+    counts = {split: len(FinQA.list_tasks(split)) for split in FinQA.list_splits()}
+    assert counts == {"train": 5672, "dev": 815, "test": 1047}
+    for split in FinQA.list_splits():
+        for task in FINQA_DATA[split]:
+            assert isinstance(task["qa"]["exe_ans"], float)
+            assert has_consistent_reference(task["qa"])

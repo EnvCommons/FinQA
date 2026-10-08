@@ -25,9 +25,11 @@ Agents are given a sandboxed environment with 0.5 CPU and 0.5 GB RAM, with acces
 
 There are three splits in this environment:
 
-- **train**: 6,251 tasks
-- **dev**: 883 tasks
-- **test**: 1,147 tasks
+- **train**: 5,672 tasks
+- **dev**: 815 tasks
+- **test**: 1,047 tasks
+
+These are the FinQA questions whose graded reference (the executed program result, `exe_ans`) is a number that agrees with the dataset's written answer, allowing for rounding, truncation and percent scaling. Questions whose annotated program gives a different value (e.g. a reversed division, other units or the opposite sign) are not served, nor are yes/no questions (6,251 / 883 / 1,147 questions in the source splits).
 
 Each task presents a financial document with pre-table context, a data table, post-table context, and a numerical question requiring calculation.
 
