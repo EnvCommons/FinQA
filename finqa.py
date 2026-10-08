@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from typing import List
 
@@ -15,18 +16,62 @@ from constants import ENV_PATH
 # Data Loading
 # ====================
 
+# Largest relative error accepted between an answer and the reference. The window
+# does not depend on how many digits the answer gives, so rounding more coarsely
+# never widens it; any answer with 3 significant figures falls inside it.
+MAX_RELATIVE_ERROR = 0.01
+
+_WRITTEN_NUMBER = re.compile(r"-?\d[\d,]*\.?\d*|-?\.\d+")
+
+
+def has_consistent_reference(qa: dict) -> bool:
+    """
+    Whether a task's graded reference (exe_ans) is a number that agrees with the
+    dataset's written answer.
+
+    exe_ans is the result of the task's annotated program. When that program is
+    wrong (wrong operands, reversed division, wrong units or sign), exe_ans
+    disagrees with the written answer and the task cannot be graded reliably,
+    so it is not served. The two agree when the written answer is within
+    MAX_RELATIVE_ERROR of exe_ans, or is exe_ans rounded or truncated to the
+    written answer's last digit, after percent scaling either way.
+
+    Yes/no questions (a non-numeric exe_ans) are not served either: this env
+    asks for a numerical answer, and a binary answer can be guessed.
+
+    A task without a written number is kept: there is nothing to check.
+    """
+    exe = qa["exe_ans"]
+    if isinstance(exe, str):
+        return False
+    match = _WRITTEN_NUMBER.search(str(qa.get("answer", "")).replace("$", ""))
+    if match is None:
+        return True
+    text = match.group(0).replace(",", "")
+    written = float(text)
+    # One unit of the written answer's last digit, with slack for float error.
+    unit = 10.0 ** -len(text.partition(".")[2]) * (1 + 1e-9)
+    for target in (exe, exe * 100, exe / 100):
+        error = abs(written - target)
+        rounded = error <= unit / 2
+        truncated = (written >= 0) == (target >= 0) and 0 <= abs(target) - abs(written) < unit
+        if rounded or truncated or (target != 0 and error / abs(target) <= MAX_RELATIVE_ERROR):
+            return True
+    return False
+
+
 def load_finqa_data():
-    """Load all FinQA splits at module import time."""
+    """Load all FinQA splits at module import time, keeping the tasks with a consistent reference."""
     data_dir = ENV_PATH / "data"
 
     with open(data_dir / "train.json", "r") as f:
-        train_tasks = json.load(f)
+        train_tasks = [t for t in json.load(f) if has_consistent_reference(t["qa"])]
 
     with open(data_dir / "dev.json", "r") as f:
-        dev_tasks = json.load(f)
+        dev_tasks = [t for t in json.load(f) if has_consistent_reference(t["qa"])]
 
     with open(data_dir / "test.json", "r") as f:
-        test_tasks = json.load(f)
+        test_tasks = [t for t in json.load(f) if has_consistent_reference(t["qa"])]
 
     return {
         "train": train_tasks,
@@ -85,12 +130,6 @@ def format_table_markdown(table: List[List[str]]) -> str:
         lines.append("| " + " | ".join(str(cell) for cell in row) + " |")
 
     return "\n".join(lines)
-
-
-# Largest relative error accepted between an answer and the reference. The window
-# does not depend on how many digits the answer gives, so rounding more coarsely
-# never widens it; any answer with 3 significant figures falls inside it.
-MAX_RELATIVE_ERROR = 0.01
 
 
 def validate_numerical_answer(submitted: str, expected: str) -> bool:
