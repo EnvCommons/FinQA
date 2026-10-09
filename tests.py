@@ -13,6 +13,7 @@ from finqa import (
     SubmitAnswerInput,
     format_full_prompt,
     has_consistent_reference,
+    stated_units,
     validate_numerical_answer,
 )
 
@@ -23,7 +24,8 @@ def _task(task_id: str) -> dict:
 
 # (task id, answer, expected reward). The references are the tasks' exe_ans:
 # LKQ/2009/page_66.pdf-2 -> 0.11852 (a percentage stored as a fraction),
-# LKQ/2016/page_48.pdf-4 -> 2.60192 (a ratio).
+# LKQ/2016/page_48.pdf-4 -> 2.60192 (a ratio),
+# HUM/2012/page_109.pdf-2 -> 95.0 (an amount in a table stated "in millions").
 CASES = [
     ("LKQ/2009/page_66.pdf-2", "11.85%", 1.0),
     ("LKQ/2009/page_66.pdf-2", "11.85", 1.0),
@@ -45,6 +47,18 @@ CASES = [
     ("LKQ/2016/page_48.pdf-4", "3", 0.0),
     ("LKQ/2016/page_48.pdf-4", "26.0", 0.0),
     ("LKQ/2016/page_48.pdf-4", "about two and a half", 0.0),
+    ("HUM/2012/page_109.pdf-2", "95", 1.0),
+    ("HUM/2012/page_109.pdf-2", "95 million", 1.0),
+    ("HUM/2012/page_109.pdf-2", "$95 Million", 1.0),
+    ("HUM/2012/page_109.pdf-2", "95M", 1.0),
+    ("HUM/2012/page_109.pdf-2", "0.095 billion", 1.0),
+    ("HUM/2012/page_109.pdf-2", "95,000 thousand", 1.0),
+    ("HUM/2012/page_109.pdf-2", "95 billion", 0.0),  # a scale the document does not use
+    ("HUM/2012/page_109.pdf-2", "95 thousand", 0.0),
+    ("HUM/2012/page_109.pdf-2", "96.5 million", 0.0),  # 1.6% off
+    ("HUM/2012/page_109.pdf-2", "95000000", 0.0),  # a bare number is read in the document's units
+    ("HUM/2012/page_109.pdf-2", "95 million dollars", 0.0),
+    ("LKQ/2016/page_48.pdf-4", "2.6 million", 0.0),  # the document states thousands
 ]
 
 
@@ -79,6 +93,38 @@ def test_submit_answer_grading(task_id: str, answer: str, expected: float):
 ])
 def test_validate_numerical_answer(submitted: str, expected: str, ok: bool):
     assert validate_numerical_answer(submitted, expected) is ok
+
+
+MILLIONS = (1e6,)
+
+
+@pytest.mark.parametrize("submitted,expected,units,ok", [
+    ("95 million", "95000000.0", (), True),  # the reference is a full amount
+    ("1.2bn", "1200000000.0", (), True),
+    ("95 million", "95.0", (), False),  # no stated unit to read the reference in
+    ("95 million", "95.0", MILLIONS, True),
+    ("95 millions", "95.0", MILLIONS, True),
+    ("95 mm", "95.0", MILLIONS, True),
+    ("-95 million", "-95.0", MILLIONS, True),
+    ("-95 million", "95.0", MILLIONS, False),
+    ("95 billion", "95.0", MILLIONS, False),
+    ("95 thousand", "95.0", MILLIONS, False),
+    ("95 thousand", "95.0", (1e3, 1e6), True),  # both scales are stated
+    ("11.85 million", "0.11852", MILLIONS, False),  # no percent scaling with a scale word
+    ("11.85% million", "0.11852", MILLIONS, False),
+    ("95 million", "0.0", MILLIONS, False),
+    ("0 million", "0.0", MILLIONS, True),
+    ("95 miles", "95.0", MILLIONS, False),
+    ("million", "95.0", MILLIONS, False),
+])
+def test_scale_words(submitted: str, expected: str, units: tuple, ok: bool):
+    assert validate_numerical_answer(submitted, expected, units) is ok
+
+
+def test_stated_units():
+    assert stated_units(_task("HUM/2012/page_109.pdf-2")) == (1e6,)
+    assert stated_units(_task("LKQ/2016/page_48.pdf-4")) == (1e3,)
+    assert stated_units(_task("HII/2018/page_103.pdf-2")) == ()
 
 
 def _sig_fig(x: float, k: int) -> str:
