@@ -23,6 +23,21 @@ MAX_RELATIVE_ERROR = 0.01
 
 _WRITTEN_NUMBER = re.compile(r"-?\d[\d,]*\.?\d*|-?\.\d+")
 
+SCALE_WORDS = {
+    "thousand": 1e3, "k": 1e3,
+    "million": 1e6, "m": 1e6, "mm": 1e6, "mn": 1e6,
+    "billion": 1e9, "b": 1e9, "bn": 1e9,
+}
+
+# A number followed by a scale word, e.g. "95 million", "1.2bn", "450K".
+_SCALED_NUMBER = re.compile(
+    r"(?P<num>-?(?:\d+\.?\d*|\.\d+))\s*(?P<word>(?:thousand|million|billion)s?|k|mm|mn|m|bn|b)",
+    re.IGNORECASE,
+)
+
+# The unit a document states its amounts in, e.g. "( in millions )", "$ in thousands".
+_STATED_UNIT = re.compile(r"\bin (thousand|million|billion)s\b", re.IGNORECASE)
+
 
 def has_consistent_reference(qa: dict) -> bool:
     """
@@ -132,7 +147,15 @@ def format_table_markdown(table: List[List[str]]) -> str:
     return "\n".join(lines)
 
 
-def validate_numerical_answer(submitted: str, expected: str) -> bool:
+def stated_units(task_data: dict) -> tuple[float, ...]:
+    """Scales ("in thousands/millions/billions") the task's text, table or question states amounts in."""
+    parts = [*task_data.get("pre_text", []), *task_data.get("post_text", []), task_data["qa"]["question"]]
+    parts += [" ".join(str(cell) for cell in row) for row in task_data.get("table", [])]
+    words = {m.group(1).lower() for m in _STATED_UNIT.finditer(" ".join(parts))}
+    return tuple(sorted(SCALE_WORDS[w] for w in words))
+
+
+def validate_numerical_answer(submitted: str, expected: str, units: tuple[float, ...] = ()) -> bool:
     """
     Validate numerical answers with flexible comparison.
 
@@ -149,9 +172,16 @@ def validate_numerical_answer(submitted: str, expected: str) -> bool:
     Thousand separators and "$" are ignored. A non-numeric reference
     ("yes"/"no") is compared as a case-insensitive string.
 
+    An answer with a scale word ("95 million", "$1.2bn") is read as the full
+    amount and matches when it equals the reference taken as a full amount or
+    in one of `units`, the scales the task's document states its amounts in.
+    So "95 million" and "0.095 billion" match a reference of 95 in a document
+    "in millions", and "95 billion" or "95 thousand" do not.
+
     Args:
         submitted: Agent's submitted answer
         expected: Ground truth answer
+        units: Scales the task's document states amounts in (see stated_units)
 
     Returns:
         True if the answer matches the reference
@@ -163,21 +193,32 @@ def validate_numerical_answer(submitted: str, expected: str) -> bool:
             s = s[:-1].strip()
         return float(s)
 
+    def within_tolerance(value: float, targets) -> bool:
+        for target in targets:
+            if target == 0:
+                if value == 0:
+                    return True
+                continue
+            if abs(value - target) / abs(target) <= MAX_RELATIVE_ERROR:
+                return True
+        return False
+
     try:
-        submitted_num = parse_number(submitted)
         expected_num = parse_number(expected)
     except ValueError:
         # Fallback to string comparison for non-numeric answers
         return submitted.strip().lower() == expected.strip().lower()
 
-    for target in (expected_num, expected_num * 100):
-        if target == 0:
-            if submitted_num == 0:
-                return True
-            continue
-        if abs(submitted_num - target) / abs(target) <= MAX_RELATIVE_ERROR:
-            return True
-    return False
+    try:
+        submitted_num = parse_number(submitted)
+    except ValueError:
+        scaled = _SCALED_NUMBER.fullmatch(submitted.strip().replace(',', '').replace('$', '').strip())
+        if scaled is None:
+            return False
+        amount = float(scaled.group("num")) * SCALE_WORDS[scaled.group("word").lower().removesuffix("s")]
+        return within_tolerance(amount, [expected_num] + [expected_num * unit for unit in units])
+
+    return within_tolerance(submitted_num, (expected_num, expected_num * 100))
 
 
 def format_full_prompt(task_data: dict) -> str:
@@ -342,7 +383,7 @@ class FinQA(CLIEnvironment):
         submitted = params.answer.strip()
 
         # Validate answer
-        is_correct = validate_numerical_answer(submitted, ground_truth)
+        is_correct = validate_numerical_answer(submitted, ground_truth, stated_units(self.task_data))
         reward = 1.0 if is_correct else 0.0
 
         # Generate feedback message
