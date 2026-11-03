@@ -23,11 +23,7 @@ Agents are given a sandboxed environment with 0.5 CPU and 0.5 GB RAM, with acces
 
 ## Tasks
 
-There are three splits in this environment:
-
-- **train**: 5,672 tasks
-- **dev**: 815 tasks
-- **test**: 1,047 tasks
+There are 5,672 tasks in the `train` split, 815 in `dev` and 1,047 in `test`.
 
 These are the FinQA questions whose graded reference (the executed program result, `exe_ans`) is a number that agrees with the dataset's written answer, allowing for rounding, truncation and percent scaling. Questions whose annotated program gives a different value (e.g. a reversed division, other units or the opposite sign) are not served, nor are yes/no questions (6,251 / 883 / 1,147 questions in the source splits).
 
@@ -35,7 +31,7 @@ Each task presents a financial document with pre-table context, a data table, po
 
 ## Reward Structure
 
-This is a multi-turn environment. Agents can use CLI tools (bash, read, write, grep, etc.) to analyze data and perform calculations. The agent submits a final numerical answer via the `submit_answer` tool. Validation is numerical: the answer must be within 1% relative error of the reference (FinQA's executed program result), however many digits it gives. The prompt asks for at least 3 significant figures, which always falls inside that window; coarser rounding may not (e.g. "7%" for 6.58% fails). Percentages may be given as "11.85%", "11.85" or "0.1185". An amount may carry a scale word ("95 million", "$1.2bn") when the reference is that full amount or is stated in that scale by the document ("in millions"); a scale the document does not use fails. Reward is binary: 1.0 if correct, 0.0 if incorrect.
+This is a multi-turn environment. Agents can use CLI tools (bash, read, write, grep, etc.) to analyze data and perform calculations. The agent submits a final numerical answer via the `submit_answer` tool. Validation is numerical: the answer must be within 1% relative error of the reference (FinQA's executed program result), however many digits it gives. The prompt asks for at least 3 significant figures, which always falls inside that window; coarser rounding may not (e.g. "7%" for 6.58% fails). Percentages may be given as "11.85%", "11.85" or "0.1185". An amount may carry a scale word ("95 million", "$1.2bn") when the reference is that full amount or is stated in that scale by the document ("in millions"); a scale the document does not use fails. Reward is binary: 1.0 if correct, 0.0 if incorrect. Only the first submission is graded; any later `submit_answer` call returns a reward of -0.1. No LLM grader is used.
 
 ## Data
 
@@ -43,38 +39,34 @@ Data consists of JSON files (`train.json`, `dev.json`, `test.json`) containing f
 
 ## Tools
 
+Agents are given the standard CLI tools (`bash`, `read`, `write`, `edit`, `multi_edit`, `glob`, `grep`, `ls`, `todo_write`) and one environment-specific tool:
+
 | Tool | Description |
 |------|-------------|
-| `bash` | Execute shell commands for computation |
-| `read` | Read file contents |
-| `write` | Write content to files |
-| `grep` | Search for patterns in files |
 | `submit_answer` | Submit your final numerical answer. Ends the episode. |
 
 ## Time Horizon
 
 Multi-turn. Agents can perform multiple computation steps before submitting a final answer.
 
-## Environment Difficulty
-
-FinQA evaluates financial numerical reasoning capabilities requiring table understanding and multi-step calculation.
-
 ## Other Environment Requirements
 
-There are no further environment requirements; FinQA works out of the box with the OpenReward endpoint without any external API keys.
+There are no further environment requirements; FinQA needs no external API keys.
 
 ## Safety
 
 Agents in FinQA perform financial calculations in a sandboxed environment. The environment does not present direct safety risks.
 
-## Citation
+## Citations
 
 ```bibtex
 @inproceedings{chen2021finqa,
   title={FinQA: A Dataset of Numerical Reasoning over Financial Data},
   author={Chen, Zhiyu and Chen, Wenhu and Smiley, Charese and Shah, Sameena and Borova, Iana and Langdon, Dylan and Moussa, Reema and Beane, Matt and Huang, Ting-Hao and Routledge, Bryan and Wang, William Yang},
   booktitle={Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing},
-  pages={7672--7685},
-  year={2021}
+  pages={3697--3711},
+  year={2021},
+  publisher={Association for Computational Linguistics},
+  doi={10.18653/v1/2021.emnlp-main.300}
 }
 ```
